@@ -1,141 +1,256 @@
--- LocalScript (StarterGui ou ScreenGui)
+-- LocalScript (StarterPlayer > StarterCharacterScripts)
 
 -- Configurações
-local staffAttributeName = "IsStaff" -- Nome do atributo que indica se um jogador é Staff
+local tpCooldown = 5 -- Cooldown em segundos para usar o TP
+local UI_Scale = 0.6 -- Ajuste isso para melhorar a aparência da UI
+local tpRangeLimit = 500 -- Limite máximo de distância para o TP (em studs)
 local updateInterval = 30 -- Intervalo de atualização em segundos
-local soundAssetId = "rbxassetid://1647344975" -- Substitua pelo ID do seu som (opcional)
-local filterService = game:GetService("TextService")
+local minimizedHeight = 0.05 -- Altura quando minimizado
+local normalHeight = 0.2
 
 -- Interface Gráfica (UI)
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "StaffListUI"
+screenGui.Name = "TPToKillerUI"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = game.Players.LocalPlayer.PlayerGui
+screenGui.IgnoreGuiInset = true
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0.3, 0, 0.4, 0) -- Tamanho menor para PC
-frame.Position = UDim2.new(0.35, 0, 0.3, 0) -- Centralizado na tela (aproximadamente)
+frame.Size = UDim2.new(0.4 * UI_Scale, 0, normalHeight * UI_Scale, 0)
+frame.Position = UDim2.new(0.3, 0, 0.7, 0)
 frame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
 frame.BorderSizePixel = 0
+frame.Visible = false
+frame.Draggable = true  -- Permitir arrastar
+
+local dragging = false
+frame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+    end
+end)
+
+frame.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
+    end
+end)
+
 frame.Parent = screenGui
 
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, 0, 0.2, 0)
-titleLabel.Position = UDim2.new(0, 0, 0, 0)
-titleLabel.BackgroundColor3 = Color3.new(1, 1, 1)
-titleLabel.BackgroundTransparency = 1
-titleLabel.TextColor3 = Color3.new(1, 1, 1)
-titleLabel.Text = "Equipe Staff"
-titleLabel.TextScaled = true
-titleLabel.Font = Enum.Font.SourceSansBold
-titleLabel.Parent = frame
+local tpButton = Instance.new("TextButton")
+tpButton.Size = UDim2.new(0.9, 0, 0.5, 0) -- Ajuste a altura
+tpButton.Position = UDim2.new(0.05, 0, 0.25, 0) -- Ajuste a posição vertical
+tpButton.BackgroundColor3 = Color3.new(0.4, 0.4, 0.4)
+tpButton.TextColor3 = Color3.new(1, 1, 1)
+tpButton.Text = "Teleportar"
+tpButton.TextScaled = true
+tpButton.Font = Enum.Font.SourceSansBold
+tpButton.Parent = frame
 
-local scrollingFrame = Instance.new("ScrollingFrame")
-scrollingFrame.Size = UDim2.new(1, 0, 0.6, 0)
-scrollingFrame.Position = UDim2.new(0, 0, 0.2, 0)
-scrollingFrame.BackgroundColor3 = Color3.new(0.15, 0.15, 0.15)
-scrollingFrame.BorderSizePixel = 0
-scrollingFrame.VerticalScrollBarInset = Enum.ScrollBarInset.Always
-scrollingFrame.ScrollBarThickness = 6 -- Espessura padrão da barra de rolagem para PC
-scrollingFrame.Parent = frame
+local cooldownLabel = Instance.new("TextLabel")
+cooldownLabel.Size = UDim2.new(1, 0, 0.2, 0)
+cooldownLabel.Position = UDim2.new(0, 0, 0.0, 0)
+cooldownLabel.BackgroundColor3 = Color3.new(1, 1, 1)
+cooldownLabel.BackgroundTransparency = 1
+cooldownLabel.TextColor3 = Color3.new(1, 1, 1)
+cooldownLabel.Text = ""
+cooldownLabel.TextScaled = true
+cooldownLabel.Font = Enum.Font.SourceSans
+cooldownLabel.Parent = frame
 
-local countLabel = Instance.new("TextLabel")
-countLabel.Size = UDim2.new(1, 0, 0.2, 0)
-countLabel.Position = UDim2.new(0, 0, 0.8, 0)
-countLabel.BackgroundColor3 = Color3.new(1, 1, 1)
-countLabel.BackgroundTransparency = 1
-countLabel.TextColor3 = Color3.new(1, 1, 1)
-countLabel.Text = "Carregando..."
-countLabel.TextScaled = true
-countLabel.Font = Enum.Font.SourceSansBold
-countLabel.Parent = frame
+local minimizeButton = Instance.new("TextButton")
+minimizeButton.Size = UDim2.new(0.2, 0, 0.2, 0)
+minimizeButton.Position = UDim2.new(0.75, 0, 0.02, 0)
+minimizeButton.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+minimizeButton.TextColor3 = Color3.new(1, 1, 1)
+minimizeButton.Text = "-"
+minimizeButton.TextScaled = true
+minimizeButton.Font = Enum.Font.SourceSansBold
+minimizeButton.Parent = frame
 
--- Variáveis de controle
+local isMinimized = false
+
+-- Variáveis
+local lastKilledCharacter = nil
+local canTp = true
+local lastTpTime = 0
 local lastUpdate = 0
 
--- Função para criar um rótulo para cada Staff
-local function createStaffLabel(staffName)
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, 0, 0, 30) -- Altura padrão para PC
-    label.BackgroundColor3 = Color3.new(1, 1, 1)
-    label.BackgroundTransparency = 1
-    label.TextColor3 = Color3.new(1, 1, 1)
-    label.Text = staffName
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.TextScaled = true
-    label.Font = Enum.Font.SourceSans
-    label.Parent = scrollingFrame
-    scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, scrollingFrame.CanvasSize.Y.Offset + 30)
-end
-
--- Função principal para atualizar a lista de Staffs
-local function updateStaffList()
-    local currentTime = os.time()
-    if currentTime - lastUpdate < updateInterval then
+-- Função para teleportar para o último jogador morto
+local function teleportToLastKilledPlayer()
+    if not canTp then return end
+    if not lastKilledCharacter then
+        cooldownLabel.Text = "Nenhum jogador morto recentemente."
         return
     end
 
-    -- Limpar a lista anterior
-    for _, child in ipairs(scrollingFrame:GetChildren()) do
-        if child:IsA("TextLabel") then
-            child:Destroy()
-        end
-    end
-    scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-
-    local staffList = {}
-    local staffCount = 0
-
-    for _, player in ipairs(game.Players:GetPlayers()) do
-        -- Alterado para usar GetAttribute
-        if player:GetAttribute(staffAttributeName) == true then
-            table.insert(staffList, player.Name)
-            staffCount = staffCount + 1
-        end
+    local character = game.Players.LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then
+        cooldownLabel.Text = "Seu personagem ainda não carregou."
+        return
     end
 
-    -- Atualizar a UI
-    if #staffList > 0 then
-        for _, staffName in ipairs(staffList) do
-            createStaffLabel(staffName)
-        end
-    else
-        createStaffLabel("Nenhum Staff online.")
+    local targetPosition = lastKilledCharacter.PrimaryPart.Position + Vector3.new(0, 2, 0)
+    local currentPosition = character.HumanoidRootPart.Position
+    local distance = (targetPosition - currentPosition).Magnitude
+
+    if distance > tpRangeLimit then
+        cooldownLabel.Text = "Muito distante para teleportar."
+        return
     end
 
-    countLabel.Text = "Total de Staffs online: " .. staffCount
+    local success, errorMessage = pcall(function()
+        character:MoveTo(targetPosition)
+    end)
 
-    -- Falar a quantidade de staffs (opcional) - Taxa limitada
-    if soundAssetId ~= "" then
-        filterService:FilterStringAsync("Total de Staffs online: " .. staffCount, game.Players.LocalPlayer.UserId):ContinueWith(function(result)
-            local filteredText = result:GetNonChatStringForBroadcast()
-            if filteredText then
-                local sound = Instance.new("Sound")
-                sound.SoundId = soundAssetId
-                sound.Volume = 0.5
-                sound.Parent = game.Players.LocalPlayer
-                sound:Play()
-                game:GetService("Debris"):AddItem(sound, 5)
+    if success then
+        canTp = false
+        lastTpTime = os.time()
+
+        -- Cooldown
+        tpButton.Visible = false
+        cooldownLabel.Visible = true
+        local timeLeft = tpCooldown
+
+        while timeLeft > 0 do
+            cooldownLabel.Text = "Teleporte disponível em " .. timeLeft .. "s"
+            wait(1)
+            timeLeft = tpCooldown - (os.time() - lastTpTime)
+            if timeLeft < 0 then
+                timeLeft = 0
             end
+        end
+
+        canTp = true
+        tpButton.Visible = true
+        cooldownLabel.Visible = false
+        cooldownLabel.Text = ""
+    else
+        warn("Erro ao teleportar: " .. errorMessage)
+        cooldownLabel.Text = "Erro ao teleportar."
+        canTp = true
+    end
+end
+
+-- Função para detectar quando o jogador mata outro jogador
+local function onCharacterDeath(killedCharacter, killer)
+    if killer and killer == game.Players.LocalPlayer then
+        lastKilledCharacter = killedCharacter
+        frame.Visible = true
+        print("Você matou " .. killedCharacter.Name)
+        updateLabelText() -- Atualizar texto do botão
+    end
+end
+
+-- Função para atualizar o texto do botão com o nome do jogador
+local function updateLabelText()
+    if lastKilledCharacter then
+        tpButton.Text = "Teleportar para " .. lastKilledCharacter.Name
+    else
+        tpButton.Text = "Teleportar para o último jogador morto"
+    end
+end
+
+-- Função para conectar ao evento de morte de personagens
+local function connectToCharacter(character)
+    local humanoid = character:FindFirstChild("Humanoid")
+    if humanoid then
+        humanoid.Died:Connect(function()
+            local lastAttacker = humanoid:GetAttribute("LastAttacker")
+            onCharacterDeath(character, lastAttacker)
         end)
     end
-
-    lastUpdate = os.time()
 end
 
--- Conectar ao evento de entrada do jogador para evitar o uso em outros jogos
-local function onPlayerJoining(player)
-   if player == game.Players.LocalPlayer then
-     updateStaffList()
-   end
+-- Conectando ao Click do botão
+tpButton.MouseButton1Click:Connect(teleportToLastKilledPlayer)
+
+-- Função para atualizar a lista de Staffs
+local function onLocalCharacterAdded(character)
+    connectToCharacter(character)
+    -- Reconecta se novos limbs forem adicionados
+    character.DescendantAdded:Connect(function(descendant)
+        if descendant:IsA("Humanoid") then
+            connectToCharacter(character)
+        end
+    end)
+    updateLabelText() -- Atualizar o nome do botão quando o personagem carrega
 end
-game.Players.PlayerAdded:Connect(onPlayerJoining)
-if game.Players.LocalPlayer then
-    updateStaffList()
+
+--Conectar aos personagens
+local function onPlayerCharacterAdded(character)
+    connectToCharacter(character)
+    character.DescendantAdded:Connect(function(descendant)
+        if descendant:IsA("Humanoid" ) then
+            connectToCharacter(character)
+        end
+    end)
 end
+
+-- Função para minimizar/maximizar a UI
+local function toggleMinimize()
+    isMinimized = not isMinimized
+    if isMinimized then
+        frame.Size = UDim2.new(0.4 * UI_Scale, 0, minimizedHeight * UI_Scale, 0)
+        tpButton.Visible = false
+        cooldownLabel.Visible = false
+        minimizeButton.Text = "+"
+    else
+        frame.Size = UDim2.new(0.4 * UI_Scale, 0, normalHeight * UI_Scale, 0)
+        tpButton.Visible = true
+        minimizeButton.Text = "-"
+    end
+end
+
+-- Conectar o botão de minimizar
+minimizeButton.MouseButton1Click:Connect(toggleMinimize)
+
+-- Adiciona o código ao personagem local
+local player = game.Players.LocalPlayer
+if player.Character then
+    onLocalCharacterAdded(player.Character)
+end
+player.CharacterAdded:Connect(onLocalCharacterAdded)
 
 -- Loop de atualização periódica
 while true do
     wait(updateInterval)
-    updateStaffList()
+    if frame.Visible then
+        updateLabelText() -- Atualizar periodicamente o nome do botão
+    end
 end
+
+-- Script (ServerScriptService)
+
+-- Função para lidar com dano e registrar o último atacante
+local function onCharacterTakeDamage(humanoid, damage)
+    local character = humanoid.Parent
+    local player = game.Players:GetPlayerFromCharacter(character)
+
+    if not character or not player then return end
+
+    -- Encontre o jogador que causou o dano
+    local creator = game:GetService("Players"):GetPlayerFromCharacter(game:GetService("Players"):GetPlayerFromCharacter(game:GetService("Players"):GetPlayerFromCharacter(game:GetService("Players"):GetPlayerFromCharacter(game:GetService("Players"):GetPlayerFromCharacter(game:GetService("Players"):GetPlayerFromCharacter(game:GetService("Players"):GetPlayerFromCharacter(humanoid.Parent)))))))
+
+    if creator then
+        -- Defina o atributo "LastAttacker" para o jogador que causou o dano
+        humanoid:SetAttribute("LastAttacker", creator)
+        print(character.Name.." levou dano de "..creator.Name)
+    end
+end
+
+-- Conecte a função de dano para cada jogador
+game.Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function(character)
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.HealthChanged:Connect(function(health)
+                if health < humanoid.Health then
+                    -- O jogador tomou dano
+                    onCharacterTakeDamage(humanoid, humanoid.Health - health)
+                end
+            end)
+        end
+    end)
+end)
