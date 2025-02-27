@@ -1,141 +1,81 @@
--- LocalScript (StarterGui ou ScreenGui)
+-- Script (ServerScriptService)
 
--- Configurações
-local staffAttributeName = "IsStaff" -- Nome do atributo que indica se um jogador é Staff
-local updateInterval = 30 -- Intervalo de atualização em segundos
-local soundAssetId = "rbxassetid://1647344975" -- Substitua pelo ID do seu som (opcional)
-local filterService = game:GetService("TextService")
+local DataStoreService = game:GetService("DataStoreService")
+local staffDataStore = DataStoreService:GetDataStore("StaffList")
+local staffList = {} -- Tabela para guardar os UsersIds
 
--- Interface Gráfica (UI)
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "StaffListUI"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = game.Players.LocalPlayer.PlayerGui
+local function carregarStaff()
+    local success, errorMessage = pcall(function()
+       staffList = staffDataStore:GetAsync("staff") or {}
+    end)
 
-local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0.3, 0, 0.4, 0) -- Tamanho menor para PC
-frame.Position = UDim2.new(0.35, 0, 0.3, 0) -- Centralizado na tela (aproximadamente)
-frame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-frame.BorderSizePixel = 0
-frame.Parent = screenGui
-
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, 0, 0.2, 0)
-titleLabel.Position = UDim2.new(0, 0, 0, 0)
-titleLabel.BackgroundColor3 = Color3.new(1, 1, 1)
-titleLabel.BackgroundTransparency = 1
-titleLabel.TextColor3 = Color3.new(1, 1, 1)
-titleLabel.Text = "Equipe Staff"
-titleLabel.TextScaled = true
-titleLabel.Font = Enum.Font.SourceSansBold
-titleLabel.Parent = frame
-
-local scrollingFrame = Instance.new("ScrollingFrame")
-scrollingFrame.Size = UDim2.new(1, 0, 0.6, 0)
-scrollingFrame.Position = UDim2.new(0, 0, 0.2, 0)
-scrollingFrame.BackgroundColor3 = Color3.new(0.15, 0.15, 0.15)
-scrollingFrame.BorderSizePixel = 0
-scrollingFrame.VerticalScrollBarInset = Enum.ScrollBarInset.Always
-scrollingFrame.ScrollBarThickness = 6 -- Espessura padrão da barra de rolagem para PC
-scrollingFrame.Parent = frame
-
-local countLabel = Instance.new("TextLabel")
-countLabel.Size = UDim2.new(1, 0, 0.2, 0)
-countLabel.Position = UDim2.new(0, 0, 0.8, 0)
-countLabel.BackgroundColor3 = Color3.new(1, 1, 1)
-countLabel.BackgroundTransparency = 1
-countLabel.TextColor3 = Color3.new(1, 1, 1)
-countLabel.Text = "Carregando..."
-countLabel.TextScaled = true
-countLabel.Font = Enum.Font.SourceSansBold
-countLabel.Parent = frame
-
--- Variáveis de controle
-local lastUpdate = 0
-
--- Função para criar um rótulo para cada Staff
-local function createStaffLabel(staffName)
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, 0, 0, 30) -- Altura padrão para PC
-    label.BackgroundColor3 = Color3.new(1, 1, 1)
-    label.BackgroundTransparency = 1
-    label.TextColor3 = Color3.new(1, 1, 1)
-    label.Text = staffName
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.TextScaled = true
-    label.Font = Enum.Font.SourceSans
-    label.Parent = scrollingFrame
-    scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, scrollingFrame.CanvasSize.Y.Offset + 30)
+    if not success then
+        warn("Erro ao carregar os Staffs" .. errorMessage)
+    end
 end
 
--- Função principal para atualizar a lista de Staffs
-local function updateStaffList()
-    local currentTime = os.time()
-    if currentTime - lastUpdate < updateInterval then
-        return
-    end
-
-    -- Limpar a lista anterior
-    for _, child in ipairs(scrollingFrame:GetChildren()) do
-        if child:IsA("TextLabel") then
-            child:Destroy()
-        end
-    end
-    scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-
-    local staffList = {}
-    local staffCount = 0
-
-    for _, player in ipairs(game.Players:GetPlayers()) do
-        -- Alterado para usar GetAttribute
-        if player:GetAttribute(staffAttributeName) == true then
-            table.insert(staffList, player.Name)
-            staffCount = staffCount + 1
-        end
-    end
-
-    -- Atualizar a UI
-    if #staffList > 0 then
-        for _, staffName in ipairs(staffList) do
-            createStaffLabel(staffName)
-        end
+--Comandos para adicionar ou remover Staffs (exemplo)
+local function adicionarStaff(userId)
+    if not table.find(staffList, userId) then
+       table.insert(staffList, userId)
+       salvarStaff()
+       print("Staff Adicionado")
     else
-        createStaffLabel("Nenhum Staff online.")
+        print("Staff já é um Staff")
     end
+end
 
-    countLabel.Text = "Total de Staffs online: " .. staffCount
+local function removerStaff(userId)
+    if table.find(staffList, userId) then
+       table.remove(staffList, table.find(staffList, userId))
+       salvarStaff()
+       print("Staff Removido")
+    else
+       print("Staff não é um Staff")
+    end
+end
 
-    -- Falar a quantidade de staffs (opcional) - Taxa limitada
-    if soundAssetId ~= "" then
-        filterService:FilterStringAsync("Total de Staffs online: " .. staffCount, game.Players.LocalPlayer.UserId):ContinueWith(function(result)
-            local filteredText = result:GetNonChatStringForBroadcast()
-            if filteredText then
-                local sound = Instance.new("Sound")
-                sound.SoundId = soundAssetId
-                sound.Volume = 0.5
-                sound.Parent = game.Players.LocalPlayer
-                sound:Play()
-                game:GetService("Debris"):AddItem(sound, 5)
+local function salvarStaff()
+    local success, errorMessage = pcall(function()
+        staffDataStore:SetAsync("staff", staffList)
+    end)
+
+    if not success then
+        warn("Erro ao salvar os Staffs" .. errorMessage)
+    end
+end
+
+-- Função para detectar quando um jogador entra e define o atributo IsStaff
+local function onPlayerAdded(player)
+    if player:IsA("Player") then
+        local userId = player.UserId
+        local isStaff = table.find(staffList, userId) ~= nil
+
+        if not player:HasAttribute("IsStaff") or player:GetAttribute("IsStaff") ~= isStaff then
+            player:SetAttribute("IsStaff", isStaff)
+        end
+
+        --Monitora futuras mudanças no atributo IsStaff
+        player:GetAttributeChangedSignal("IsStaff"):Connect(function()
+            local currentIsStaff = player:GetAttribute("IsStaff")
+            if currentIsStaff ~= isStaff then
+                isStaff = currentIsStaff
             end
         end)
     end
-
-    lastUpdate = os.time()
 end
 
--- Conectar ao evento de entrada do jogador para evitar o uso em outros jogos
-local function onPlayerJoining(player)
-   if player == game.Players.LocalPlayer then
-     updateStaffList()
-   end
-end
-game.Players.PlayerAdded:Connect(onPlayerJoining)
-if game.Players.LocalPlayer then
-    updateStaffList()
+-- Conectando ao evento de entrada do jogador
+game.Players.PlayerAdded:Connect(onPlayerAdded)
+
+-- Para jogadores que já estão no servidor quando o script é iniciado
+for _, player in ipairs(game.Players:GetPlayers()) do
+    onPlayerAdded(player)
 end
 
--- Loop de atualização periódica
-while true do
-    wait(updateInterval)
-    updateStaffList()
-end
+-- Salvar a lista quando o servidor for desligado (opcional)
+game:BindToClose(function()
+  salvarStaff()
+end)
+
+carregarStaff() -- Carrega os Staffs na inicialização do servidor
